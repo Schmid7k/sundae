@@ -8,7 +8,7 @@ use core::arch::x86 as arch;
 use core::arch::x86_64 as arch;
 
 use arch::{
-    __m128i, _mm_loadu_si128, _mm_set_epi64x, _mm_setzero_si128, _mm_storeu_si128, _mm_xor_si128,
+    __m128i, _mm_loadu_si128, _mm_set_epi8, _mm_storeu_si128, _mm_xor_si128, _mm_shuffle_epi8
 };
 
 pub use aead::{self, AeadCore, AeadInPlace, Error, NewAead};
@@ -94,38 +94,60 @@ where
         associated_data: &[u8],
         buffer: &mut [u8],
     ) -> Result<Tag, Error> {
-        let b1 = if associated_data.len() > 0 { 1 } else { 0 };
-        let b2 = if buffer.len() > 0 { 1 } else { 0 };
-        let mut buf = [0u8; 16];
-        buf[0] = b1;
-        buf[1] = b2;
+        unsafe {
+            let mut block: __m128i;
+            let mut lastblock = self.bc_encrypt(_mm_set_epi8(0x40,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0));
+            let mul2 = _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,15);
+            let xor2 = _mm_set_epi8(15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15);
 
-        let mut tag = self.bc_encrypt(buf);
+            let mut tag = [0u8;16];
 
-        if associated_data.len() > 0 {
-            let mut remaining = associated_data.len();
             let mut block_start = 0;
             let mut block_end = 16;
+            let mut len = buffer.len();
 
-            while remaining > 16 {
-                buf = self.bc_encrypt(xor_block(&buf, &associated_data[block_start..block_end]));
+            while len > 16 {
+                block = _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i), lastblock);
 
-                remaining -= 16;
+                self.bc_encrypt(block);
+
+                lastblock = block;
+
+                len -= 16;
                 block_start += 16;
                 block_end += 16;
             }
 
-            let x = if associated_data[block_start..].len() < 16 {
-                2
-            } else {
-                4
-            };
+            block = _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *mut __m128i), lastblock);
+            block_start += 16;
+            block_end += 16;
+            len -= 16;
 
-            // V <- E(X x (V xor pad(A[l_a])))
-            //buf = self.bc_encrypt(in)
+            block = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
+
+            self.bc_encrypt(block);
+
+            lastblock = block;
+
+            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, lastblock);
+
+            block_start = 0;
+            block_end = 16;
+            len = buffer.len();
+
+            while len > 0 {
+                self.bc_encrypt(block);
+
+                _mm_storeu_si128(buffer[block_start..block_end].as_ptr() as *mut __m128i, _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i), block));
+
+                block_start += 16;
+                block_end += 16;
+                len -= 16;
+            }
+
+
+            Ok(tag.into())
         }
-
-        Ok(tag.into())
     }
 
     fn decrypt_in_place_detached(
@@ -144,24 +166,19 @@ where
     B: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt + BlockDecrypt,
     NonceSize: ArrayLength<u8>,
 {
-    fn bc_encrypt(&self, _in: [u8; 16]) -> [u8; 16] {
-        let mut tmp = GenericArray::from(_in);
-        self.cipher.encrypt_block(&mut tmp);
-        return tmp.into();
+    // Encryption procedure of the internal block cipher
+    #[inline]
+    fn bc_encrypt(&self, _in: __m128i) -> __m128i {
+        let mut tmp = u8x16::from(_in);
+        self.cipher.encrypt_block(tmp.as_mut_array().into());
+        tmp.into()
     }
 
-    fn bc_decrypt(&self, _in: [u8; 16]) -> [u8; 16] {
-        let mut tmp = GenericArray::from(_in);
-        self.cipher.decrypt_block(&mut tmp);
-        return tmp.into();
+    // Decryption procedure of the internal block cipher
+    #[inline]
+    fn bc_decrypt(&self, _in: __m128i) -> __m128i {
+        let mut tmp = u8x16::from(_in);
+        self.cipher.decrypt_block(tmp.as_mut_array().into());
+        tmp.into()
     }
-}
-
-fn xor_block(a: &[u8], b: &[u8]) -> [u8; 16] {
-    let mut res = [0u8; 16];
-    for i in 0..16 {
-        res[i] = a[i] ^ b[i];
-    }
-
-    res
 }
