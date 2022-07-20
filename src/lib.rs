@@ -7,6 +7,7 @@ use core::arch::x86 as arch;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64 as arch;
 
+use aead::Payload;
 use arch::{
     __m128i, _mm_loadu_si128, _mm_set_epi8, _mm_storeu_si128, _mm_xor_si128, _mm_shuffle_epi8
 };
@@ -95,56 +96,72 @@ where
         buffer: &mut [u8],
     ) -> Result<Tag, Error> {
         unsafe {
-            let mut block: __m128i;
-            let mut lastblock = self.bc_encrypt(_mm_set_epi8(0x40,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0));
-            let mul2 = _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,15);
-            let xor2 = _mm_set_epi8(15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15);
+            let mut pt_len = buffer.len();
+            let mut ad_len = associated_data.len();
+            // Setting the initial value for whether ad is empty or not
+            let b1: i8 = if ad_len > 0 { 0x8 } else { 0 };
+            // Setting the initial value for whether pt is empty or not
+            let b2: i8 = if pt_len > 0 { 0x4 } else { 0 };
 
-            let mut tag = [0u8;16];
+            let mul2 = _mm_set_epi8(14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,-1);
+            let xor2 = _mm_set_epi8(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 15, -1, 15, -1);
+
+            let mut block: __m128i;
+            let mut v = self.bc_encrypt(_mm_set_epi8((b1 | b2) << 4,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0));
+            
+            let mut tag = [0u8; 16];
+            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, v);
 
             let mut block_start = 0;
             let mut block_end = 16;
-            let mut len = buffer.len();
 
-            while len > 16 {
-                block = _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i), lastblock);
-
-                self.bc_encrypt(block);
-
-                lastblock = block;
-
-                len -= 16;
-                block_start += 16;
-                block_end += 16;
+            // Tag computing over associated data
+            if ad_len > 0 {
+                while ad_len > 16 {
+                    block = _mm_loadu_si128(associated_data[block_start..block_end].as_ptr() as *const __m128i);
+                    v = self.bc_encrypt(_mm_xor_si128(v, block));
+    
+                    ad_len -= 16;
+                    block_start += 16;
+                    block_end += 16;
+                }
+                block = _mm_loadu_si128(associated_data[block_start..].as_ptr() as *const __m128i);
+                v = _mm_shuffle_epi8(mul2, _mm_xor_si128(v, block));
+                v = self.bc_encrypt(v);
+                _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, v);
             }
-
-            block = _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *mut __m128i), lastblock);
-            block_start += 16;
-            block_end += 16;
-            len -= 16;
-
-            block = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
-
-            self.bc_encrypt(block);
-
-            lastblock = block;
-
-            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, lastblock);
 
             block_start = 0;
             block_end = 16;
-            len = buffer.len();
 
-            while len > 0 {
-                self.bc_encrypt(block);
+            if pt_len > 0 {
+                while pt_len > 16 {
+                    block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
+                    v = self.bc_encrypt(_mm_xor_si128(v, block));
+    
+                    pt_len -= 16;
+                    block_start += 16;
+                    block_end += 16;
+                }
+                block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
+                v = _mm_shuffle_epi8(mul2, _mm_xor_si128(v, block));
+                v = self.bc_encrypt(v);
+                _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, v);
+            }
 
-                _mm_storeu_si128(buffer[block_start..block_end].as_ptr() as *mut __m128i, _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i), block));
+            block_start = 0;
+            block_end = 16;
+            pt_len = buffer.len();
+
+            while pt_len > 0 {
+                v = self.bc_encrypt(v);
+
+                _mm_storeu_si128(buffer[block_start..block_end].as_ptr() as *mut __m128i, _mm_xor_si128(_mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i), v));
 
                 block_start += 16;
                 block_end += 16;
-                len -= 16;
+                pt_len -= 16;
             }
-
 
             Ok(tag.into())
         }
@@ -157,7 +174,35 @@ where
         buffer: &mut [u8],
         tag: &aead::Tag<Self>,
     ) -> Result<(), Error> {
-        Ok(())
+        unsafe {
+            let mut ct_len = buffer.len();
+            let mut block_start = 0;
+            let mut block_end = 16;
+
+            let mut block: __m128i;
+            let mut v = _mm_loadu_si128(tag[..].as_ptr() as *const __m128i);
+
+            while ct_len > 0 {
+                v = self.bc_encrypt(v);
+                block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
+                _mm_storeu_si128(buffer[block_start..block_end].as_ptr() as *mut __m128i, _mm_xor_si128(v, block));
+                
+                block_start += 16;
+                block_end += 16;
+                ct_len -= 16;
+            }
+
+            if !buffer.is_empty() {
+                let payload = Payload {
+                    aad: associated_data,
+                    msg: buffer
+                };
+                let test = self::aead::Aead::encrypt(self, nonce, payload).expect("Encryption error");
+                assert!(test[test.len()-16..] == tag.to_vec());
+            }
+
+            Ok(())
+        }
     }
 }
 
