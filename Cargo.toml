@@ -22,3 +22,8 @@ heapless = ["aead/heapless"]
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[[bench]]
+name = "sundae_enc"
+path = "benches/sundae_enc.rs"
+harness = false
