@@ -1,19 +1,21 @@
 [build]
 rustflags = [
-  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse4.1,+sse4.2,+ssse3,+pclmulqdq,+rdrand,+rdseed",
+  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse3,+sse4.1,+sse4.2,+sse4a,+ssse3,+pclmulqdq,+rdrand,+rdseed,+movbe",
   "-Cllvm-args=-x86-asm-syntax=intel",
 ]
 rustdocflags = [
-  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse4.1,+sse4.2,+ssse3,+pclmulqdq,+rdrand,+rdseed",
+  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse3,+sse4.1,+sse4.2,+sse4a,+ssse3,+pclmulqdq,+rdrand,+rdseed,+movbe",
   "-Cllvm-args=-x86-asm-syntax=intel",
 ]
 incremental = false
 
 [test]
 rustflags = [
-  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse4.1,+sse4.2,+ssse3,+pclmulqdq,+rdrand,+rdseed",
+  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse3,+sse4.1,+sse4.2,+sse4a,+ssse3,+pclmulqdq,+rdrand,+rdseed,+movbe",
+  "-Cllvm-args=-x86-asm-syntax=intel",
 ]
 rustdocflags = [
-  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse4.1,+sse4.2,+ssse3,+pclmulqdq,+rdrand,+rdseed",
+  "-Ctarget-feature=+aes,+avx,+avx2,+sse,+sse2,+sse3,+sse4.1,+sse4.2,+sse4a,+ssse3,+pclmulqdq,+rdrand,+rdseed,+movbe",
+  "-Cllvm-args=-x86-asm-syntax=intel",
 ]
 incremental = false

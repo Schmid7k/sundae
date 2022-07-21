@@ -97,20 +97,12 @@ where
     ) -> Result<Tag, Error> {
         unsafe {
             let mut pt_len = buffer.len();
-            let mut ad_len = associated_data.len();
+            let ad_len = associated_data.len();
             // Setting the initial value for whether ad is empty or not
             let b1: i8 = if ad_len > 0 { 0x8 } else { 0 };
             // Setting the initial value for whether pt is empty or not
             let b2: i8 = if pt_len > 0 { 0x4 } else { 0 };
-
-            let mul2 = _mm_set_epi8(14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1);
-            let _xor2 = _mm_set_epi8(
-                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 15, -1, 15, -1,
-            );
-
-            let mut buf = [0u8; 16];
-
-            let mut block: __m128i;
+            
             let mut v = self.bc_encrypt(_mm_set_epi8(
                 (b1 | b2) << 4,
                 0,
@@ -129,65 +121,19 @@ where
                 0,
                 0,
             ));
+            let mut tag = [0u8; 16];
 
-            let tag = [0u8; 16];
-            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, v);
+            // Tag computing over associated data
+            if ad_len > 0 {
+                tag = self.mac(associated_data, &mut v);
+            }
+            // Tag computing over plaintext
+            if pt_len > 0 {
+                tag = self.mac(buffer, &mut v);
+            }
 
             let mut block_start = 0;
             let mut block_end = 16;
-
-            // Tag computing over associated data
-            while ad_len > 16 {
-                block = _mm_loadu_si128(
-                    associated_data[block_start..block_end].as_ptr() as *const __m128i
-                );
-                v = self.bc_encrypt(_mm_xor_si128(v, block));
-
-                ad_len -= 16;
-                block_start += 16;
-                block_end += 16;
-            }
-            // Copy remaining bytes from associated data
-            buf[..ad_len].copy_from_slice(&associated_data[block_start..]);
-            
-            // If remaining block of ad is incomplete pad it
-            if ad_len < 16 {
-                buf[ad_len] = 0x80;
-            }
-
-            block = _mm_loadu_si128(buf[..].as_ptr() as *const __m128i);
-            v = _mm_shuffle_epi8(mul2, _mm_xor_si128(v, block));
-            v = self.bc_encrypt(v);
-            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, v);
-
-            block_start = 0;
-            block_end = 16;
-
-            // Tag computing over plaintext
-            while pt_len > 16 {
-                block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
-                v = self.bc_encrypt(_mm_xor_si128(v, block));
-
-                pt_len -= 16;
-                block_start += 16;
-                block_end += 16;
-            }
-            buf = [0u8; 16];
-            buf[..pt_len].copy_from_slice(&buffer[block_start..]);
-
-            if pt_len < 16 {
-                buf[pt_len] = 0x80;
-            }
-
-            block = _mm_loadu_si128(buf[..].as_ptr() as *const __m128i);
-            v = _mm_shuffle_epi8(mul2, _mm_xor_si128(v, block));
-            v = self.bc_encrypt(v);
-            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, v);
-
-            block_start = 0;
-            block_end = 16;
-            pt_len = buffer.len();
-
             // Actual encryption procedure
             while pt_len > 0 {
                 v = self.bc_encrypt(v);
@@ -256,6 +202,49 @@ where
     B: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt,
     NonceSize: ArrayLength<u8>,
 {
+    #[inline]
+    fn mac(&self, buffer: &[u8], v: &mut __m128i) -> [u8; 16] {
+        unsafe {
+            let tag = [0u8; 16];
+            let mut buf = [0u8; 16];
+            let mut block: __m128i;
+            let mul2 = _mm_set_epi8(14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1);
+            let _xor2 = _mm_set_epi8(
+                -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 15, -1, 15, -1,
+            );
+
+            let mut block_start = 0;
+            let mut block_end = 16;
+            let mut len = buffer.len();
+
+            // Tag computing over associated data
+            while len > 16 {
+                block = _mm_loadu_si128(
+                    buffer[block_start..block_end].as_ptr() as *const __m128i
+                );
+                *v = self.bc_encrypt(_mm_xor_si128(*v, block));
+
+                len -= 16;
+                block_start += 16;
+                block_end += 16;
+            }
+            // Copy remaining bytes from associated data
+            buf[..len].copy_from_slice(&buffer[block_start..]);
+            
+            // If remaining block is incomplete pad it
+            if len < 16 {
+                buf[len] = 0x80;
+            }
+
+            block = _mm_loadu_si128(buf[..].as_ptr() as *const __m128i);
+            *v = _mm_shuffle_epi8(mul2, _mm_xor_si128(*v, block));
+            *v = self.bc_encrypt(*v);
+            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, *v);
+
+            tag
+        }
+    }
+
     // Encryption procedure of the internal block cipher
     #[inline]
     fn bc_encrypt(&self, _in: __m128i) -> __m128i {
