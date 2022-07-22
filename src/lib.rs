@@ -1,6 +1,115 @@
+//! The [SUNDAE][1] lightweight [Authenticated Encryption and Associated Data (AEAD)][2] cipher.
+//!
+//! SUNDAE made it to round 2 of the [NIST lightweight cryptography competition][3] as part of SUNDAE-GIFT.
+//!
+//! ## Security notes
+//!
+//! Although encryption and decryption passes the test vector, there is no guarantee
+//! of constant-time operation.
+//!
+//! **USE AT YOUR OWN RISK.**
+//!
+//! # Usage
+//! ```
+//! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though for smaller devices GIFT would be preferable
+//! use sundae::aead::{Aead, NewAead};
+//!
+//! let key = b"just another key";
+//! let cipher = SundaeAes::new(key.into());
+//!
+//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE does not use nonces
+//!
+//! let ciphertext = cipher.encrypt(nonce, b"plaintext message".as_ref())
+//!     .expect("encryption failure!"); // NOTE: handle this error to avoid panics!
+//!
+//! let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())
+//!     .expect("decryption failure!"); // NOTE: handle this error to avoic panics!
+//!
+//! assert_eq!(&plaintext, b"plaintext message");
+//! ```
+//!
+//! ## Usage with AAD
+//! SUNDAE can authenticate additional data that is not encrypted alongside with the ciphertext.
+//! 
+//! It can also be used as a [MAC][4] algorithm if only additional data is provided without plaintext.
+//! ```
+//! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though a lightweight block cipher like GIFT would be preferable for smaller devices
+//! use sundae::aead::{Aead, NewAead, Payload};
+//!
+//! let key = b"just another key";
+//! let cipher = SundaeAes::new(key.into());
+//!
+//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE does not use nonces
+//!
+//! let payload = Payload {
+//!     msg: &b"this will be encrypted".as_ref(),
+//!     aad: &b"this will NOT be encrypted, but will be authenticated".as_ref(),
+//! };
+//!
+//! let ciphertext = cipher.encrypt(nonce, payload)
+//!     .expect("encryption failure!"); // NOTE: handle this error to avoid panics!
+//!
+//! let payload = Payload {
+//!     msg: &ciphertext,
+//!     aad: &b"this will NOT be encrypted, but will be authenticated".as_ref(),
+//! };
+//!
+//! let plaintext = cipher.decrypt(nonce, payload)
+//!     .expect("decryption failure!"); // NOTE: handle this error to avoid panics!
+//!
+//! assert_eq!(&plaintext, b"this will be encrypted");
+//! ```
+//!
+//! ## In-place Usage (eliminates `alloc` requirement)
+//!
+//! This crate has an optional `alloc` feature which can be disabled in e.g.
+//! microcontroller environments that don't have a heap.
+//!
+//! The [`AeadInPlace::encrypt_in_place`] and [`AeadInPlace::decrypt_in_place`]
+//! methods accept any type that impls the [`aead::Buffer`] trait which
+//! contains the plaintext for encryption or ciphertext for decryption.
+//!
+//! Note that if you enable the `heapless` feature of this crate,
+//! you will receive an impl of [`aead::Buffer`] for `heapless::Vec`
+//! (re-exported from the [`aead`] crate as [`aead::heapless::Vec`]),
+//! which can then be passed as the `buffer` parameter to the in-place encrypt
+//! and decrypt methods:
+//!
+//! ```
+//! # #[cfg(feature = "heapless")]
+//! # {
+//! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though a lightweight block cipher like GIFT would be preferable for smaller devices
+//! use sundae::aead::{AeadInPlace, NewAead};
+//! use sundae::aead::heapless::Vec;
+//!
+//! let key = b"just another key";
+//! let cipher = SundaeAes::new(key,into());
+//!
+//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE does not use nonces
+//!
+//! let mut buffer: Vec<u8, 128> = Vec::new(); // Buffer needs 16-bytes overhead for tag
+//! buffer.extend_from_slice(b"plaintext message");
+//!
+//! // Encrypt `buffer` in-place, replacing the plaintext contents with ciphertext
+//! cipher.encrypt_in_place(nonce, b"", &mut buffer).expect("encryption failure!");
+//!
+//! // `buffer` now contains the message ciphertext
+//! assert_ne!(&buffer, b"plaintext message");
+//!
+//! // Decrypt `buffer` in-place, replacing its ciphertext context with the original plaintext
+//! cipher.decrypt_in_place(nonce, b"", &mut buffer).expect("decryption failure!");
+//! assert_eq!(&buffer, b"plaintext message");
+//! # }
+//! ```
+//!
+//! [1]: https://csrc.nist.gov/Projects/lightweight-cryptography/round-2-candidates
+//! [2]: https://en.wikipedia.org/wiki/Authenticated_encryption
+//! [3]: https://csrc.nist.gov/projects/lightweight-cryptography
+//! [4]: https://en.wikipedia.org/wiki/Message_authentication_code
+
 #![feature(portable_simd)]
 #![no_std]
-//#![warn(missing_docs, rust_2018_idioms)]
+#![warn(missing_docs, rust_2018_idioms)]
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86 as arch;
@@ -36,9 +145,11 @@ pub type Nonce<NonceSize> = GenericArray<u8, NonceSize>;
 /// SUNDAE tags
 pub type Tag = GenericArray<u8, U16>;
 
+/// SUNDAE with AES128 as underlying block cipher
 #[cfg(feature = "aes")]
 pub type SundaeAes = Sundae<Aes128, U8>;
 
+/// Struct representing SUNDAE generic over the underlying block cipher
 #[derive(Clone)]
 pub struct Sundae<B, NonceSize> {
     cipher: B,
@@ -123,6 +234,7 @@ where
             ));
             let mut tag = [0u8; 16];
 
+            
             // Tag computing over associated data
             if ad_len > 0 {
                 tag = self.mac(associated_data, &mut v);
@@ -132,23 +244,35 @@ where
                 tag = self.mac(buffer, &mut v);
             }
 
-            let mut block_start = 0;
-            let mut block_end = 16;
-            // Actual encryption procedure
-            while pt_len > 0 {
+            if pt_len > 0 {
+                let mut block_start = 0;
+                let mut block_end = 16;
+
+                let mut buf = [0u8; 16];
+                // Encryption procedure for complete blocks
+                while pt_len > 16 {
+                    v = self.bc_encrypt(v);
+    
+                    _mm_storeu_si128(
+                        buffer[block_start..block_end].as_ptr() as *mut __m128i,
+                        _mm_xor_si128(
+                            _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i),
+                            v,
+                        ),
+                    );
+    
+                    block_start += 16;
+                    block_end += 16;
+                    pt_len -= 16;
+                }
+    
+                // Encryption for last (maybe partial) block
                 v = self.bc_encrypt(v);
-
-                _mm_storeu_si128(
-                    buffer[block_start..block_end].as_ptr() as *mut __m128i,
-                    _mm_xor_si128(
-                        _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i),
-                        v,
-                    ),
-                );
-
-                block_start += 16;
-                block_end += 16;
-                pt_len -= 16;
+    
+                buf[..pt_len].copy_from_slice(&buffer[block_start..]);
+    
+                let tmp = u8x16::from(_mm_xor_si128(_mm_loadu_si128(buf.as_ptr() as *const __m128i), v));
+                buffer[block_start..].copy_from_slice(&tmp.as_array()[..pt_len]);
             }
 
             Ok(tag.into())
@@ -164,25 +288,36 @@ where
     ) -> Result<(), Error> {
         unsafe {
             let mut ct_len = buffer.len();
-            let mut block_start = 0;
-            let mut block_end = 16;
 
-            let mut block: __m128i;
-            let mut v = _mm_loadu_si128(tag[..].as_ptr() as *const __m128i);
+            if ct_len > 0 {
+                let mut block_start = 0;
+                let mut block_end = 16;
 
-            // Decryption procedure
-            while ct_len > 0 {
+                let mut buf = [0u8; 16];
+                let mut block: __m128i;
+                let mut v = _mm_loadu_si128(tag[..].as_ptr() as *const __m128i);
+
+                // Decryption procedure for complete blocks
+                while ct_len > 16 {
+                    v = self.bc_encrypt(v);
+                    block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
+                    _mm_storeu_si128(
+                        buffer[block_start..block_end].as_ptr() as *mut __m128i,
+                        _mm_xor_si128(v, block),
+                    );
+    
+                    block_start += 16;
+                    block_end += 16;
+                    ct_len -= 16;
+                }
+
+                // Decryption for last (maybe partial) block
                 v = self.bc_encrypt(v);
-                block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
-                _mm_storeu_si128(
-                    buffer[block_start..block_end].as_ptr() as *mut __m128i,
-                    _mm_xor_si128(v, block),
-                );
-
-                block_start += 16;
-                block_end += 16;
-                ct_len -= 16;
+                buf[..ct_len].copy_from_slice(&buffer[block_start..]);
+                let tmp = u8x16::from(_mm_xor_si128(v, _mm_loadu_si128(buf.as_ptr() as *const __m128i)));
+                buffer[block_start..].copy_from_slice(&tmp.as_array()[..ct_len]);
             }
+            
 
             // Tag verification
             let payload = Payload {
@@ -236,10 +371,10 @@ where
                 buf[len] = 0x80;
             }
 
-            block = _mm_loadu_si128(buf[..].as_ptr() as *const __m128i);
+            block = _mm_loadu_si128(buf.as_ptr() as *const __m128i);
             *v = _mm_shuffle_epi8(mul2, _mm_xor_si128(*v, block));
             *v = self.bc_encrypt(*v);
-            _mm_storeu_si128(tag[..].as_ptr() as *mut __m128i, *v);
+            _mm_storeu_si128(tag.as_ptr() as *mut __m128i, *v);
 
             tag
         }

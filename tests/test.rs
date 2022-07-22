@@ -2,100 +2,125 @@ use aead::Payload;
 use sundae::{aead::Aead, NewAead, SundaeAes};
 
 #[test]
-fn test_encrypt() {
-    let key = [0u8; 16];
-    let cipher = SundaeAes::new(&key.into());
+fn extensive_test() {
+    let keys = [
+        [0u8; 16],
+        [
+            0x2, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x3,
+        ],
+    ];
+    let nonces = [[0u8; 8]];
+    let ad = [
+    "",
+    "a",
+    "ab",
+    "0123456789abcde",
+    "0123456789abcdef", // 16 bytes
+    "0123456789abcdefg",
+    "0123456789abcdef0123456789abcde",
+    "0123456789abcdef0123456789abcdef", // 32 bytes
+    "0123456789abcdef0123456789abcdefg", // 33 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde", // 63 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", // 64 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefg", // 65 bytes
+    // 127 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+    // 128 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    // 129 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefi",
+    // 255 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+    // 256 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    // 257 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefx",
+    // 512 bytes
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+];
+    let plaintexts = [
+        "",
+		"a",
+		"ab",
+		"0123456789abcde",
+		"0123456789abcdef", // 16 bytes
+		"0123456789abcdef0",
+		"0123456789abcdef0123456789abcde",
+		"0123456789abcdef0123456789abcdef", // 32 bytes
+		"0123456789abcdef0123456789abcdef0", // 33 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde", // 63 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", // 64 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0", // 65 bytes
+		// 127 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+		// 128 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		// 129 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefo",
+		// 255 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
+		// 256 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		// 257 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+		// 512 bytes
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		// 2032 bytes = 127 blocks
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        // 2048 bytes = 128 blocks
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ];
 
-    let res = cipher
-        .encrypt(&[0u8; 8].into(), [0u8; 16].as_ref())
-        .expect("Encryption failed");
+    for (n, nonce) in nonces.iter().enumerate() {
+        for (k, key) in keys.iter().enumerate() {
+            let cipher = SundaeAes::new(key.into());
+            for ad in ad.iter() {
+                for p in plaintexts.iter().map(|s| s.as_bytes()) {
+                    let payload = Payload {
+                        msg: p,
+                        aad: ad.as_bytes(),
+                    };
+                    let size = p.len();
+                    println!("Verifying n={}, k={}, a={}, p={}", n, k, ad.len(), size);
 
-    println!("{:#02x?}", res);
+                    println!("E+D ");
+                    println!("adlen={}", ad.len());
+                    println!("len={}", p.len());
+                    let c = cipher.encrypt(nonce.into(), payload).expect("");
+                    println!("clen={}", c.len());
+                    let payload = Payload {
+                        msg: &c,
+                        aad: ad.as_bytes(),
+                    };
+                    let m = cipher.decrypt(nonce.into(), payload).expect("");
+
+                    assert!(m == p);
+                }
+            }
+        }
+    }
+
+    println!(
+        "All {} combinations passed.",
+        nonces.len() * keys.len() * ad.len() * plaintexts.len()
+    );
 }
 
-///Res: [0xc8,0xca,0x46,0x5f,0x52,0xec,0x53,0x4a,0xd6,0xa0,0xb2,0x32,0xb3,0xa7,0x81,0x2c]
 #[test]
-fn test_ad() {
+#[should_panic]
+fn tag_test() {
     let key = [0u8; 16];
+    let nonce = [0u8; 8];
+    let m = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0";
+
     let cipher = SundaeAes::new(&key.into());
+    let mut c = cipher.encrypt(&nonce.into(), m.as_bytes()).expect("");
 
-    let payload = Payload {
-        aad: &[0u8; 16],
-        msg: &[0u8; 0],
-    };
+    println!("{:#02x?}", c);
 
-    let enc = cipher
-        .encrypt(&[0u8; 8].into(), payload)
-        .expect("Encryption failed");
+    c[m.len() + 15] = 0x17;
 
-    println!("{:#02x?}", enc);
+    println!("{:#02x?}", c);
 
-    let payload = Payload {
-        aad: &[0u8; 16],
-        msg: &enc,
-    };
-
-    let dec = cipher.decrypt(&[0u8; 8].into(), payload).expect("Decryption failed");
-
-    println!("{:#02x?}", dec);
-}
-
-#[test]
-fn test_decrypt() {
-    let key = [0u8; 16];
-    let cipher = SundaeAes::new(&key.into());
-
-    let enc = cipher
-        .encrypt(&[0u8; 8].into(), [0u8; 16].as_ref())
-        .expect("Encryption failed");
-
-    println!("{:#02x?}", enc);
-
-    let dec = cipher
-        .decrypt(&[0u8; 8].into(), enc.as_ref())
-        .expect("Decryption error");
-
-    println!("{:#02x?}", dec);
-
-    assert_eq!([0u8; 16], dec.as_ref());
-}
-
-///Res: [0xeb,0x3a,0xe7,0x8c,0x1c,0xbe,0x1,0xb4,0x15,0x9b,0x91,0x3e,0xcb,0x9c,0xa2,0x99,0x3f,0x84,0x5,0x9b,0x39,0x22,0x56,0x4d,0xdf,0x84,0xc8,0x2b,0x3e,0x70,0xc2,0xb5]
-#[test]
-fn pt_and_ad() {
-    let key = [0u8; 16];
-    let cipher = SundaeAes::new(&key.into());
-
-    let payload = Payload {
-        aad: &[0u8; 16],
-        msg: &[1u8; 16],
-    };
-
-    let enc = cipher
-        .encrypt(&[0u8; 8].into(), payload)
-        .expect("Encryption failed");
-
-    println!("{:#02x?}", enc);
-
-    let payload = Payload {
-        aad: &[0u8; 16],
-        msg: &enc,
-    };
-
-    let dec = cipher.decrypt(&[0u8; 8].into(), payload).expect("Decryption failed");
-
-    println!("{:#02x?}", dec);
-}
-
-#[test]
-fn sanity_check() {
-    let key = [0u8; 16];
-    let cipher = SundaeAes::new(&key.into());
-
-    let res = cipher
-        .encrypt(&[0u8; 8].into(), [0u8; 128].as_ref())
-        .expect("Encryption failure");
-    cipher
-        .decrypt(&[0u8; 8].into(), res.as_ref())
-        .expect("Decryption failure");
+    cipher.decrypt(&nonce.into(), c.as_ref()).expect("");
 }
