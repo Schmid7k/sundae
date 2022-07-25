@@ -344,7 +344,7 @@ where
             let mut buf = [0u8; 16];
             let mut block: __m128i;
             let mul2 = _mm_set_epi8(14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1);
-            let _xor2 = _mm_set_epi8(
+            let xor2 = _mm_set_epi8(
                 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 15, -1, 15, -1,
             );
 
@@ -371,8 +371,8 @@ where
                 buf[len] = 0x80;
             }
 
-            block = _mm_loadu_si128(buf.as_ptr() as *const __m128i);
-            *v = _mm_shuffle_epi8(mul2, _mm_xor_si128(*v, block));
+            block = _mm_xor_si128(*v, _mm_loadu_si128(buf.as_ptr() as *const __m128i));
+            *v = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
             *v = self.bc_encrypt(*v);
             _mm_storeu_si128(tag.as_ptr() as *mut __m128i, *v);
 
