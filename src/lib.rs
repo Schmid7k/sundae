@@ -30,7 +30,7 @@
 //!
 //! ## Usage with AAD
 //! SUNDAE can authenticate additional data that is not encrypted alongside with the ciphertext.
-//! 
+//!
 //! It can also be used as a [MAC][4] algorithm if only additional data is provided without plaintext.
 //! ```
 //! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though a lightweight block cipher like GIFT would be preferable for smaller devices
@@ -202,7 +202,7 @@ where
 {
     fn encrypt_in_place_detached(
         &self,
-        _nonce: &Nonce<NonceSize>,
+        nonce: &Nonce<NonceSize>,
         associated_data: &[u8],
         buffer: &mut [u8],
     ) -> Result<Tag, Error> {
@@ -210,12 +210,22 @@ where
             let mut pt_len = buffer.len();
             let ad_len = associated_data.len();
             // Setting the initial value for whether ad is empty or not
-            let b1: i8 = if ad_len > 0 { 0x8 } else { 0 };
+            let b127: i8 = if ad_len > 0 { -128 } else { 0 };
             // Setting the initial value for whether pt is empty or not
-            let b2: i8 = if pt_len > 0 { 0x4 } else { 0 };
-            
+            let b126: i8 = if pt_len > 0 { 0b01000000 } else { 0 };
+            let b125: i8 = match nonce.len() {
+                0 | 8 => 0,
+                12 | 16 => 0b00100000,
+                _ => return Err(Error),
+            };
+            let b124: i8 = match nonce.len() {
+                0 | 12 => 0,
+                8 | 16 => 0b00010000,
+                _ => return Err(Error),
+            };
+
             let mut v = self.bc_encrypt(_mm_set_epi8(
-                (b1 | b2) << 4,
+                b127 | b126 | b125 | b124,
                 0,
                 0,
                 0,
@@ -234,7 +244,6 @@ where
             ));
             let mut tag = [0u8; 16];
 
-            
             // Tag computing over associated data
             if ad_len > 0 {
                 tag = self.mac(associated_data, &mut v);
@@ -252,26 +261,31 @@ where
                 // Encryption procedure for complete blocks
                 while pt_len > 16 {
                     v = self.bc_encrypt(v);
-    
+
                     _mm_storeu_si128(
                         buffer[block_start..block_end].as_ptr() as *mut __m128i,
                         _mm_xor_si128(
-                            _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i),
+                            _mm_loadu_si128(
+                                buffer[block_start..block_end].as_ptr() as *const __m128i
+                            ),
                             v,
                         ),
                     );
-    
+
                     block_start += 16;
                     block_end += 16;
                     pt_len -= 16;
                 }
-    
+
                 // Encryption for last (maybe partial) block
                 v = self.bc_encrypt(v);
-    
+
                 buf[..pt_len].copy_from_slice(&buffer[block_start..]);
-    
-                let tmp = u8x16::from(_mm_xor_si128(_mm_loadu_si128(buf.as_ptr() as *const __m128i), v));
+
+                let tmp = u8x16::from(_mm_xor_si128(
+                    _mm_loadu_si128(buf.as_ptr() as *const __m128i),
+                    v,
+                ));
                 buffer[block_start..].copy_from_slice(&tmp.as_array()[..pt_len]);
             }
 
@@ -300,12 +314,13 @@ where
                 // Decryption procedure for complete blocks
                 while ct_len > 16 {
                     v = self.bc_encrypt(v);
-                    block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
+                    block =
+                        _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
                     _mm_storeu_si128(
                         buffer[block_start..block_end].as_ptr() as *mut __m128i,
                         _mm_xor_si128(v, block),
                     );
-    
+
                     block_start += 16;
                     block_end += 16;
                     ct_len -= 16;
@@ -314,10 +329,12 @@ where
                 // Decryption for last (maybe partial) block
                 v = self.bc_encrypt(v);
                 buf[..ct_len].copy_from_slice(&buffer[block_start..]);
-                let tmp = u8x16::from(_mm_xor_si128(v, _mm_loadu_si128(buf.as_ptr() as *const __m128i)));
+                let tmp = u8x16::from(_mm_xor_si128(
+                    v,
+                    _mm_loadu_si128(buf.as_ptr() as *const __m128i),
+                ));
                 buffer[block_start..].copy_from_slice(&tmp.as_array()[..ct_len]);
             }
-            
 
             // Tag verification
             let payload = Payload {
@@ -354,9 +371,7 @@ where
 
             // Tag computing over associated data
             while len > 16 {
-                block = _mm_loadu_si128(
-                    buffer[block_start..block_end].as_ptr() as *const __m128i
-                );
+                block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
                 *v = self.bc_encrypt(_mm_xor_si128(*v, block));
 
                 len -= 16;
@@ -365,7 +380,7 @@ where
             }
             // Copy remaining bytes from associated data
             buf[..len].copy_from_slice(&buffer[block_start..]);
-            
+
             // If remaining block is incomplete pad it
             if len < 16 {
                 buf[len] = 0x80;
