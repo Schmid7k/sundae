@@ -12,6 +12,7 @@ cipher = "0.4.3"
 criterion = "0.3.5"
 criterion-cycles-per-byte = "0.1.2"
 rand = "0.8.5"
+camellia = { git = "https://github.com/RustCrypto/block-ciphers" }
 
 [features]
 default = ["aes", "alloc"]

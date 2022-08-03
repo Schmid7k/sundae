@@ -1,5 +1,33 @@
-use aead::Payload;
-use sundae::{aead::Aead, NewAead, SundaeAes};
+use aead::{Payload};
+use cipher::{KeyInit, consts::U8};
+use sundae::{aead::Aead, NewAead, SundaeAes, Nonce, Sundae};
+use camellia::Camellia128;
+
+#[test]
+fn camellia_test() {
+    let key = b"just another key";
+    let nonce = Nonce::from_slice(b"thenonce");
+
+    let camellia = Camellia128::new(key.into());
+
+    let cipher: Sundae<Camellia128, U8> = Sundae::from(camellia);
+
+    let payload = Payload {
+        msg: b"this will be encrypted",
+        aad: b"this will NOT be encrypted, but will be authenticated",
+    };
+
+    let ciphertext = cipher.encrypt(nonce, payload).expect("encryption failure!");
+
+    let payload = Payload {
+        msg: &ciphertext,
+        aad: b"this will NOT be encrypted, but will be authenticated"
+    };
+
+    let plaintext = cipher.decrypt(nonce, payload).expect("decryption failure!");
+
+    assert_eq!(&plaintext, b"this will be encrypted");
+}
 
 #[test]
 fn extensive_test() {
