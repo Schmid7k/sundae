@@ -3,6 +3,12 @@
 //! SUNDAE made it to round 2 of the [NIST lightweight cryptography competition][3] as part of SUNDAE-GIFT.
 //!
 //! ## Security notes
+//! 
+//! SUNDAE guarantees creation of unique ciphertext for every unique pair of plaintext + associated data, 
+//! if only one of them is different the output will be different, making the NONCE unnecessary in situations where
+//! this can be guaranteed. This is why SUNDAE is a good choice for encryption on devices that lack proper randomness sources for generating NONCEs, or have limited secure storage. 
+//! However, in situations in which the same plaintext + associated data pair is encrypted regularly, or it can not be
+//! guaranteed that at least one part is distinct each time, it is advisable to use SUNDAE with a NONCE.
 //!
 //! Although encryption and decryption passes the test vector, there is no guarantee
 //! of constant-time operation.
@@ -17,7 +23,7 @@
 //! let key = b"just another key";
 //! let cipher = SundaeAes::new(key.into());
 //!
-//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE does not use nonces
+//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE supports 0-bit, 64-bit, 96-bit and 128-bit NONCEs
 //!
 //! let ciphertext = cipher.encrypt(nonce, b"plaintext message".as_ref())
 //!     .expect("encryption failure!"); // NOTE: handle this error to avoid panics!
@@ -39,7 +45,7 @@
 //! let key = b"just another key";
 //! let cipher = SundaeAes::new(key.into());
 //!
-//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE does not use nonces
+//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE supports 0-bit, 64-bit, 96-bit and 128-bit NONCEs
 //!
 //! let payload = Payload {
 //!     msg: &b"this will be encrypted".as_ref(),
@@ -85,7 +91,7 @@
 //! let key = b"just another key";
 //! let cipher = SundaeAes::new(key,into());
 //!
-//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE does not use nonces
+//! let nonce = Nonce::from_slice(b"thenonce"); // SUNDAE supports 0-bit, 64-bit, 96-bit and 128-bit NONCEs
 //!
 //! let mut buffer: Vec<u8, 128> = Vec::new(); // Buffer needs 16-bytes overhead for tag
 //! buffer.extend_from_slice(b"plaintext message");
@@ -102,7 +108,7 @@
 //! # }
 //! ```
 //!
-//! [1]: https://csrc.nist.gov/Projects/lightweight-cryptography/round-2-candidates
+//! [1]: https://csrc.nist.gov/CSRC/media/Projects/lightweight-cryptography/documents/round-2/spec-doc-rnd2/SUNDAE-GIFT-spec-round2.pdf
 //! [2]: https://en.wikipedia.org/wiki/Authenticated_encryption
 //! [3]: https://csrc.nist.gov/projects/lightweight-cryptography
 //! [4]: https://en.wikipedia.org/wiki/Message_authentication_code
@@ -207,8 +213,9 @@ where
         buffer: &mut [u8],
     ) -> Result<Tag, Error> {
         unsafe {
+            let ad = [nonce, associated_data].concat();
             let mut pt_len = buffer.len();
-            let ad_len = associated_data.len();
+            let ad_len = ad.len();
             // Setting the initial value for whether ad is empty or not
             let b127: i8 = if ad_len > 0 { -128 } else { 0 };
             // Setting the initial value for whether pt is empty or not
@@ -246,7 +253,7 @@ where
 
             // Tag computing over associated data
             if ad_len > 0 {
-                tag = self.mac(associated_data, &mut v);
+                tag = self.mac(&ad, &mut v);
             }
             // Tag computing over plaintext
             if pt_len > 0 {
@@ -360,7 +367,9 @@ where
             let tag = [0u8; 16];
             let mut buf = [0u8; 16];
             let mut block: __m128i;
+            // For Galois field multiplication
             let mul2 = _mm_set_epi8(14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1);
+            // For Galois field multiplication
             let xor2 = _mm_set_epi8(
                 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 15, -1, 15, -1,
             );
@@ -369,7 +378,7 @@ where
             let mut block_end = 16;
             let mut len = buffer.len();
 
-            // Tag computing over associated data
+            // Tag computing over complete blocks
             while len > 16 {
                 block = _mm_loadu_si128(buffer[block_start..block_end].as_ptr() as *const __m128i);
                 *v = self.bc_encrypt(_mm_xor_si128(*v, block));
@@ -378,7 +387,7 @@ where
                 block_start += 16;
                 block_end += 16;
             }
-            // Copy remaining bytes from associated data
+            // Copy remaining bytes from buffer
             buf[..len].copy_from_slice(&buffer[block_start..]);
 
             // If remaining block is incomplete pad it
@@ -387,9 +396,18 @@ where
             }
 
             block = _mm_xor_si128(*v, _mm_loadu_si128(buf.as_ptr() as *const __m128i));
-            *v = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
-            *v = self.bc_encrypt(*v);
-            _mm_storeu_si128(tag.as_ptr() as *mut __m128i, *v);
+            // If last block smaller than block_size execute galois field multiplication by 2
+            // else execute galois field multiplication by 4
+            if len < 16 {
+                *v = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
+                *v = self.bc_encrypt(*v);
+                _mm_storeu_si128(tag.as_ptr() as *mut __m128i, *v);
+            } else {
+                *v = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
+                *v = _mm_xor_si128(_mm_shuffle_epi8(block, mul2), _mm_shuffle_epi8(block, xor2));
+                *v = self.bc_encrypt(*v);
+                _mm_storeu_si128(tag.as_ptr() as *mut __m128i, *v);
+            }     
 
             tag
         }
