@@ -4,13 +4,13 @@ version = 3
 
 [[package]]
 name = "aead"
-version = "0.4.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b613b8e1e3cf911a086f53f03bf286f52fd7a7258e4fa606f0ef220d39d8877"
+checksum = "ae06cea71059b6b79d879afcdd237a33ac61afc052fdd605815e6f3916254abf"
 dependencies = [
+ "crypto-common",
  "generic-array",
  "heapless",
- "rand_core",
 ]
 
 [[package]]

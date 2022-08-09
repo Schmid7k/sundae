@@ -1,6 +1,6 @@
 use aead::{Payload};
-use cipher::{KeyInit, consts::U8};
-use sundae::{aead::Aead, NewAead, SundaeAes, Nonce, Sundae};
+use cipher::{consts::U8};
+use sundae::{aead::{Aead, KeyInit}, SundaeAes, Nonce, Sundae};
 use camellia::Camellia128;
 
 #[test]
