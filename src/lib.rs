@@ -18,7 +18,7 @@
 //! # Usage
 //! ```
 //! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though for smaller devices GIFT would be preferable
-//! use sundae::aead::{Aead, NewAead};
+//! use sundae::aead::{Aead, KeyInit};
 //!
 //! let key = b"just another key";
 //! let cipher = SundaeAes::new(key.into());
@@ -40,7 +40,7 @@
 //! It can also be used as a [MAC][4] algorithm if only additional data is provided without plaintext.
 //! ```
 //! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though a lightweight block cipher like GIFT would be preferable for smaller devices
-//! use sundae::aead::{Aead, NewAead, Payload};
+//! use sundae::aead::{Aead, KeyInit, Payload};
 //!
 //! let key = b"just another key";
 //! let cipher = SundaeAes::new(key.into());
@@ -85,7 +85,7 @@
 //! # #[cfg(feature = "heapless")]
 //! # {
 //! use sundae::{SundaeAes, Nonce}; // If you don't know what block cipher to use with SUNDAE choose the pre-defined type with AES, though a lightweight block cipher like GIFT would be preferable for smaller devices
-//! use sundae::aead::{AeadInPlace, NewAead};
+//! use sundae::aead::{AeadInPlace, KeyInit};
 //! use sundae::aead::heapless::Vec;
 //!
 //! let key = b"just another key";
