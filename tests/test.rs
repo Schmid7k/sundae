@@ -1,7 +1,10 @@
-use aead::{Payload};
-use cipher::{consts::U8};
-use sundae::{aead::{Aead, KeyInit}, SundaeAes, Nonce, Sundae};
+use aead::Payload;
 use camellia::Camellia128;
+use cipher::consts::U8;
+use sundae::{
+    aead::{Aead, KeyInit},
+    Nonce, Sundae, SundaeAes,
+};
 
 #[test]
 fn camellia_test() {
@@ -21,7 +24,7 @@ fn camellia_test() {
 
     let payload = Payload {
         msg: &ciphertext,
-        aad: b"this will NOT be encrypted, but will be authenticated"
+        aad: b"this will NOT be encrypted, but will be authenticated",
     };
 
     let plaintext = cipher.decrypt(nonce, payload).expect("decryption failure!");
