@@ -3,9 +3,10 @@ use criterion_cycles_per_byte::CyclesPerByte;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sundae::{
-    aead::{Aead, KeyInit},
-    AeadInPlace, SundaeAes,
+    aead::{Aead, KeyInit, consts::U8},
+    AeadInPlace, SundaeAes, Sundae,
 };
+use gift_cipher::Gift128;
 
 pub const KB: usize = 1024;
 
@@ -17,6 +18,8 @@ fn bench(c: &mut Criterion<CyclesPerByte>) {
     let mut key = [0u8; 16];
     rng.fill_bytes(&mut key);
     let cipher = SundaeAes::new(&key.into());
+    let gift = Gift128::new(&key.into());
+    let cipher2: Sundae<Gift128, U8> = Sundae::from(gift);
 
     for size in &[KB, 2 * KB, 4 * KB, 8 * KB, 16 * KB] {
         let mut m = vec![0; *size];
@@ -39,6 +42,23 @@ fn bench(c: &mut Criterion<CyclesPerByte>) {
                     .expect("Encryption error")
             });
         });
+
+        group.bench_function(BenchmarkId::new("encrypt-gift", size), |b| {
+            b.iter(|| {
+                cipher2
+                    .encrypt(&nonce.into(), m.as_slice())
+                    .expect("Encryption error")
+            });
+        });
+
+        group.bench_function(BenchmarkId::new("encrypt-into-gift", size), |b| {
+            b.iter(|| {
+                cipher2
+                    .encrypt_in_place_detached(&nonce.into(), &ad, m.as_mut_slice())
+                    .expect("Encryption error")
+            });
+        });
+
     }
 
     group.finish();

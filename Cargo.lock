@@ -360,6 +360,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gift_cipher"
+version = "0.0.1"
+source = "git+https://github.com/Schmid7k/block-ciphers#917c2d44e7effb0123b0b70ab4057c2676e6cf6b"
+dependencies = [
+ "cipher",
+]
+
+[[package]]
 name = "half"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -800,6 +808,7 @@ dependencies = [
  "cipher",
  "criterion",
  "criterion-cycles-per-byte",
+ "gift_cipher",
  "rand",
 ]
 
